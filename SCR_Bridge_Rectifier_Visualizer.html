@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SCR Bridge Rectifier Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 18px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f5f7;
+      color: #111;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.10);
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0 0 14px;
+    }
+    canvas {
+      width: 100%;
+      height: 430px;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      background: white;
+      touch-action: none;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    input[type="range"] {
+      width: 100%;
+    }
+    .value {
+      font-weight: 800;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .swatch {
+      display: inline-block;
+      width: 20px;
+      height: 4px;
+      vertical-align: middle;
+      margin-right: 6px;
+      border-radius: 2px;
+    }
+    .blue { background: #2563eb; }
+    .red { background: #dc2626; }
+    .gray { background: #777; }
+    .hint {
+      color: #555;
+      line-height: 1.45;
+      font-size: 14px;
+      margin-bottom: 0;
+    }
+    .formula {
+      background: #f1f3f5;
+      padding: 10px;
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>SCR Bridge Rectifier Visualizer</h1>
+
+    <div class="card">
+      <canvas id="scope" width="1100" height="430"></canvas>
+
+      <div class="controls">
+        <label>
+          Firing angle α: <span class="value" id="alphaVal">45°</span>
+          <input id="alpha" type="range" min="0" max="179" value="45" step="1" />
+        </label>
+
+        <label>
+          Peak voltage Vm: <span class="value" id="vmVal">50 V</span>
+          <input id="vm" type="range" min="5" max="200" value="50" step="1" />
+        </label>
+
+        <label>
+          Cycles shown: <span class="value" id="cyclesVal">4</span>
+          <input id="cycles" type="range" min="1" max="8" value="4" step="1" />
+        </label>
+      </div>
+
+      <div class="legend">
+        <span><span class="swatch blue"></span>Full-wave rectified source</span>
+        <span><span class="swatch red"></span>SCR load voltage</span>
+        <span><span class="swatch gray"></span>Firing angle markers</span>
+      </div>
+
+      <p class="hint">
+        The red waveform stays at 0 V until the SCR fires at α degrees into each half-cycle.
+        Then it follows the rectified sine until the next zero crossing.
+      </p>
+
+      <div class="formula">
+        v<sub>load</sub>(x) = |Vm sin(x)|, only when half-cycle angle ≥ α
+      </div>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById("scope");
+const ctx = canvas.getContext("2d");
+
+const alphaSlider = document.getElementById("alpha");
+const vmSlider = document.getElementById("vm");
+const cyclesSlider = document.getElementById("cycles");
+
+const alphaVal = document.getElementById("alphaVal");
+const vmVal = document.getElementById("vmVal");
+const cyclesVal = document.getElementById("cyclesVal");
+
+function draw() {
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const padL = 58;
+  const padR = 22;
+  const padT = 26;
+  const padB = 48;
+
+  const alpha = Number(alphaSlider.value);
+  const Vm = Number(vmSlider.value);
+  const cycles = Number(cyclesSlider.value);
+
+  alphaVal.textContent = alpha + "°";
+  vmVal.textContent = Vm + " V";
+  cyclesVal.textContent = cycles;
+
+  const xMax = cycles * 360;
+  const yMax = Vm * 1.18;
+
+  const X = deg => padL + (deg / xMax) * (W - padL - padR);
+  const Y = volt => padT + (1 - volt / yMax) * (H - padT - padB);
+
+  function rectified(deg) {
+    return Math.abs(Vm * Math.sin(deg * Math.PI / 180));
+  }
+
+  function halfAngle(deg) {
+    return deg - 180 * Math.floor(deg / 180);
+  }
+
+  function scr(deg) {
+    return halfAngle(deg) >= alpha ? rectified(deg) : 0;
+  }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  for (let d = 0; d <= xMax; d += 90) {
+    ctx.moveTo(X(d), padT);
+    ctx.lineTo(X(d), H - padB);
+  }
+
+  for (let v = 0; v <= Vm; v += Vm / 5) {
+    ctx.moveTo(padL, Y(v));
+    ctx.lineTo(W - padR, Y(v));
+  }
+
+  ctx.stroke();
+
+  // Axes
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(padL, Y(0));
+  ctx.lineTo(W - padR, Y(0));
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, H - padB);
+  ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = "#333";
+  ctx.font = "13px system-ui";
+
+  for (let d = 0; d <= xMax; d += 180) {
+    ctx.fillText(d + "°", X(d) - 16, H - 20);
+  }
+
+  for (let i = 0; i <= 5; i++) {
+    const v = Math.round((Vm / 5) * i);
+    ctx.fillText(v + "V", 12, Y(v) + 4);
+  }
+
+  // Full-wave rectified waveform
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  for (let d = 0; d <= xMax; d += 1) {
+    const px = X(d);
+    const py = Y(rectified(d));
+
+    if (d === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+
+  ctx.stroke();
+
+  // SCR load voltage, including vertical firing jumps and zero-crossing drops
+  ctx.strokeStyle = "#dc2626";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+
+  let first = true;
+
+  for (let h = 0; h < cycles * 2; h++) {
+    const start = h * 180;
+    const fire = start + alpha;
+    const end = start + 180;
+
+    if (first) {
+      ctx.moveTo(X(start), Y(0));
+      first = false;
+    }
+
+    // Flat zero section before firing
+    ctx.lineTo(X(fire), Y(0));
+
+    // Vertical jump at firing
+    ctx.lineTo(X(fire), Y(rectified(fire)));
+
+    // Conducting portion
+    for (let d = fire; d <= end; d += 1) {
+      ctx.lineTo(X(d), Y(scr(d)));
+    }
+
+    // Vertical drop at zero crossing
+    ctx.lineTo(X(end), Y(0));
+  }
+
+  ctx.stroke();
+
+  // Firing angle marker lines
+  ctx.strokeStyle = "#777";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 6]);
+
+  for (let h = 0; h < cycles * 2; h++) {
+    const fire = h * 180 + alpha;
+    ctx.beginPath();
+    ctx.moveTo(X(fire), padT);
+    ctx.lineTo(X(fire), H - padB);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+
+  // Firing angle label
+  ctx.fillStyle = "#111";
+  ctx.font = "15px system-ui";
+  ctx.fillText("α = " + alpha + "°", X(alpha) + 8, padT + 20);
+}
+
+[alphaSlider, vmSlider, cyclesSlider].forEach(input => {
+  input.addEventListener("input", draw);
+});
+
+draw();
+</script>
+</body>
+</html>
