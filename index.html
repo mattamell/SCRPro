@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SCR / TRIAC Phase Control Visualizer</title>
+  <style>
+    :root{
+      --bg:#f4f6f8;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#5b6472;
+      --grid:#e5e7eb;
+      --axis:#1f2937;
+      --blue:#2563eb;
+      --red:#dc2626;
+      --purple:#7c3aed;
+      --green:#059669;
+      --orange:#f59e0b;
+      --border:#d1d5db;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      padding:18px;
+      background:var(--bg);
+      color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    }
+    .wrap{max-width:1180px;margin:0 auto}
+    h1{font-size:24px;margin:0 0 6px}
+    .subtitle{margin:0 0 14px;color:var(--muted);font-size:14px;line-height:1.35}
+    .card{
+      background:var(--card);
+      border-radius:18px;
+      padding:16px;
+      box-shadow:0 10px 32px rgba(0,0,0,.10);
+      border:1px solid rgba(0,0,0,.04);
+    }
+    .scopeWrap{position:relative}
+    canvas{
+      width:100%;
+      height:520px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:#fff;
+      touch-action:none;
+      display:block;
+    }
+    .controls{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+      gap:14px;
+      margin-top:16px;
+      align-items:end;
+    }
+    label{
+      display:grid;
+      gap:6px;
+      font-size:14px;
+      font-weight:700;
+    }
+    input[type="range"], select, input[type="number"]{
+      width:100%;
+      font:inherit;
+    }
+    select, input[type="number"]{
+      padding:9px 10px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#fff;
+    }
+    input[type="range"]{accent-color:#2563eb}
+    .value{font-weight:900}
+    .toggles{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px 16px;
+      margin-top:14px;
+      padding:12px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:#fafafa;
+    }
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:14px;
+      font-weight:700;
+      user-select:none;
+    }
+    .toggle input{width:18px;height:18px}
+    .legend{
+      display:flex;
+      flex-wrap:wrap;
+      gap:14px 18px;
+      margin-top:13px;
+      font-size:14px;
+      color:#20242b;
+    }
+    .swatch{
+      display:inline-block;
+      width:22px;
+      height:4px;
+      vertical-align:middle;
+      margin-right:7px;
+      border-radius:999px;
+    }
+    .blue{background:var(--blue)}
+    .red{background:var(--red)}
+    .purple{background:var(--purple)}
+    .green{background:var(--green)}
+    .orange{background:var(--orange)}
+    .gray{background:#777}
+    .hint{
+      color:var(--muted);
+      line-height:1.45;
+      font-size:14px;
+      margin:12px 0 0;
+    }
+    .formula{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+      gap:10px;
+    }
+    .formula div{
+      background:#f1f3f5;
+      padding:10px;
+      border-radius:12px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:13px;
+      overflow-x:auto;
+      line-height:1.35;
+    }
+    .footer{
+      margin-top:10px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }
+    @media (max-width:650px){
+      body{padding:10px}
+      h1{font-size:20px}
+      canvas{height:430px}
+      .card{padding:12px}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SCR / TRIAC Phase Control Visualizer</h1>
+  <p class="subtitle">
+    Interactive firing-angle waveform tool for SCR full-wave bridge rectifiers and TRIAC AC phase control.
+  </p>
+
+  <div class="card">
+    <div class="scopeWrap">
+      <canvas id="scope" width="1180" height="520"></canvas>
+    </div>
+
+    <div class="controls">
+      <label>
+        Device / circuit mode
+        <select id="mode">
+          <option value="scrBridge">SCR bridge / full-wave controlled DC</option>
+          <option value="triac">TRIAC / AC phase control</option>
+        </select>
+      </label>
+
+      <label>
+        Load type
+        <select id="loadType">
+          <option value="r">Resistive load</option>
+          <option value="rl" disabled>RL load — coming next: extinction angle β</option>
+        </select>
+      </label>
+
+      <label>
+        Firing angle α: <span class="value" id="alphaVal">45°</span>
+        <input id="alpha" type="range" min="0" max="179" value="45" step="1">
+      </label>
+
+      <label>
+        Peak voltage Vm: <span class="value" id="vmVal">50 V</span>
+        <input id="vm" type="range" min="5" max="250" value="50" step="1">
+      </label>
+
+      <label>
+        Cycles shown: <span class="value" id="cyclesVal">4</span>
+        <input id="cycles" type="range" min="1" max="8" value="4" step="1">
+      </label>
+    </div>
+
+    <div class="toggles">
+      <label class="toggle"><input id="showSource" type="checkbox" checked>Show source voltage</label>
+      <label class="toggle"><input id="showLoad" type="checkbox" checked>Show load voltage</label>
+      <label class="toggle"><input id="showDevice" type="checkbox" checked>Show SCR / TRIAC voltage</label>
+      <label class="toggle"><input id="showMarkers" type="checkbox" checked>Show firing markers</label>
+      <label class="toggle"><input id="showResultBox" type="checkbox" checked>Show results box</label>
+      <label class="toggle"><input id="showCursor" type="checkbox" checked>Show cursor readout</label>
+    </div>
+
+    <div class="legend">
+      <span><span class="swatch blue"></span>Vs source</span>
+      <span><span class="swatch red"></span>Vload</span>
+      <span><span class="swatch purple"></span>Vdevice = Vs − Vload</span>
+      <span><span class="swatch orange"></span>Cursor</span>
+      <span><span class="swatch gray"></span>Firing angle markers</span>
+    </div>
+
+    <p class="hint" id="hint"></p>
+
+    <div class="formula">
+      <div id="formula1"></div>
+      <div id="formula2"></div>
+    </div>
+
+    <p class="footer">
+      Ideal device model: when the SCR/TRIAC is off, the device blocks the source voltage. When it is on, the device voltage is approximately zero.
+      For a resistive load, conduction naturally ends at each zero crossing.
+    </p>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("scope");
+const ctx = canvas.getContext("2d");
+
+const modeSelect = document.getElementById("mode");
+const loadType = document.getElementById("loadType");
+const alphaSlider = document.getElementById("alpha");
+const vmSlider = document.getElementById("vm");
+const cyclesSlider = document.getElementById("cycles");
+
+const alphaVal = document.getElementById("alphaVal");
+const vmVal = document.getElementById("vmVal");
+const cyclesVal = document.getElementById("cyclesVal");
+
+const showSourceBox = document.getElementById("showSource");
+const showLoadBox = document.getElementById("showLoad");
+const showDeviceBox = document.getElementById("showDevice");
+const showMarkersBox = document.getElementById("showMarkers");
+const showResultBox = document.getElementById("showResultBox");
+const showCursorBox = document.getElementById("showCursor");
+
+const hint = document.getElementById("hint");
+const formula1 = document.getElementById("formula1");
+const formula2 = document.getElementById("formula2");
+
+let cursorDeg = 225;
+let hasCursor = true;
+
+function degToRad(deg){ return deg * Math.PI / 180; }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function getState(){
+  const mode = modeSelect.value;
+  const alpha = Number(alphaSlider.value);
+  const Vm = Number(vmSlider.value);
+  const cycles = Number(cyclesSlider.value);
+  const xMax = cycles * 360;
+  cursorDeg = clamp(cursorDeg, 0, xMax);
+  return { mode, alpha, Vm, cycles, xMax, isTriac: mode === "triac" };
+}
+
+function makeMath(state){
+  const { mode, alpha, Vm, isTriac } = state;
+  const alphaRad = degToRad(alpha);
+
+  const conductionAngle = 180 - alpha;
+
+  // Resistive load formulas.
+  // SCR bridge: average DC is positive because waveform is full-wave rectified.
+  // TRIAC: average over a complete AC cycle is zero because the positive and negative halves cancel.
+  const Vdc = isTriac ? 0 : (Vm / Math.PI) * (1 + Math.cos(alphaRad));
+
+  // RMS over full output waveform for both SCR bridge full-wave and TRIAC symmetric AC control.
+  const Vrms = Vm * Math.sqrt(((Math.PI - alphaRad) + Math.sin(2 * alphaRad) / 2) / (2 * Math.PI));
+
+  const source = deg => {
+    const s = Vm * Math.sin(degToRad(deg));
+    return isTriac ? s : Math.abs(s);
+  };
+
+  const halfAngle = deg => deg - 180 * Math.floor(deg / 180);
+
+  const isConducting = deg => halfAngle(deg) >= alpha;
+
+  const load = deg => isConducting(deg) ? source(deg) : 0;
+
+  const device = deg => source(deg) - load(deg);
+
+  return { Vdc, Vrms, conductionAngle, source, halfAngle, isConducting, load, device };
+}
+
+function drawRoundedRect(x, y, w, h, r, fillStyle, strokeStyle){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if(fillStyle){
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+  }
+  if(strokeStyle){
+    ctx.strokeStyle = strokeStyle;
+    ctx.stroke();
+  }
+}
+
+function drawTextBox(lines, x, y, w, lineH, title){
+  const pad = 12;
+  const h = pad * 2 + (title ? 22 : 0) + lines.length * lineH;
+  drawRoundedRect(x, y, w, h, 12, "rgba(255,255,255,.92)", "rgba(31,41,55,.45)");
+  ctx.fillStyle = "#111827";
+  ctx.font = "700 14px system-ui";
+  if(title){
+    ctx.fillText(title, x + pad, y + pad + 4);
+  }
+  ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, x + pad, y + pad + (title ? 26 : 4) + i * lineH);
+  });
+}
+
+function plotSmooth(fn, X, Y, xMax, color, width, dashed=false){
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if(dashed) ctx.setLineDash([7,6]);
+  ctx.beginPath();
+  for(let d=0; d<=xMax; d+=1){
+    const px = X(d);
+    const py = Y(fn(d));
+    if(d === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLoadWithVerticals(math, state, X, Y){
+  const { alpha, cycles } = state;
+  ctx.strokeStyle = "#dc2626";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+
+  let first = true;
+
+  for(let h=0; h<cycles*2; h++){
+    const start = h * 180;
+    const fire = start + alpha;
+    const end = start + 180;
+
+    if(first){
+      ctx.moveTo(X(start), Y(0));
+      first = false;
+    }
+
+    // Blocking interval: load voltage is zero.
+    ctx.lineTo(X(fire), Y(0));
+
+    // At firing, load voltage jumps to source value.
+    ctx.lineTo(X(fire), Y(math.source(fire)));
+
+    // Conducting interval.
+    for(let d=fire; d<=end; d+=1){
+      ctx.lineTo(X(d), Y(math.load(d)));
+    }
+
+    // Natural commutation at zero crossing.
+    ctx.lineTo(X(end), Y(0));
+  }
+
+  ctx.stroke();
+}
+
+function drawDeviceWithVerticals(math, state, X, Y){
+  const { alpha, cycles } = state;
+  ctx.strokeStyle = "#7c3aed";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+
+  let first = true;
+
+  for(let h=0; h<cycles*2; h++){
+    const start = h * 180;
+    const fire = start + alpha;
+    const end = start + 180;
+
+    if(first){
+      ctx.moveTo(X(start), Y(math.device(start)));
+      first = false;
+    }
+
+    // Device blocks the source voltage before firing.
+    for(let d=start; d<=fire; d+=1){
+      ctx.lineTo(X(d), Y(math.device(d)));
+    }
+
+    // Device voltage collapses to zero at firing.
+    ctx.lineTo(X(fire), Y(0));
+
+    // Ideal on-state voltage is zero.
+    ctx.lineTo(X(end), Y(0));
+
+    // Start of next half-cycle: device blocks again.
+    if(h < cycles*2 - 1){
+      ctx.lineTo(X(end), Y(math.device(end + 0.001)));
+    }
+  }
+
+  ctx.stroke();
+}
+
+function updateText(state, math){
+  const { isTriac } = state;
+
+  if(isTriac){
+    hint.textContent = "TRIAC mode: the source is AC. The TRIAC blocks at the start of each positive and negative half-cycle, then conducts after α until the next zero crossing.";
+    formula1.innerHTML = "TRIAC: Vs = Vm·sin(θ)<br>Vload = Vs when θhalf ≥ α, otherwise 0";
+    formula2.innerHTML = "Vdevice = Vs − Vload<br>Vdc = 0 over a full AC cycle";
+  } else {
+    hint.textContent = "SCR bridge mode: the source shown is full-wave rectified. The SCR blocks until α in each half-cycle, then the load follows the rectified source.";
+    formula1.innerHTML = "SCR bridge: Vs = |Vm·sin(θ)|<br>Vload = Vs when θhalf ≥ α, otherwise 0";
+    formula2.innerHTML = "Vdevice = Vs − Vload<br>Vdc = Vm/π · (1 + cos α)";
+  }
+}
+
+function draw(){
+  const state = getState();
+  const math = makeMath(state);
+  updateText(state, math);
+
+  const { alpha, Vm, cycles, xMax, isTriac } = state;
+
+  alphaVal.textContent = alpha + "°";
+  vmVal.textContent = Vm + " V";
+  cyclesVal.textContent = cycles;
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const padL = 66;
+  const padR = 24;
+  const padT = 28;
+  const padB = 54;
+
+  const yMin = isTriac ? -Vm * 1.22 : -Vm * 0.16;
+  const yMax = Vm * 1.22;
+
+  const X = deg => padL + (deg / xMax) * (W - padL - padR);
+  const Y = volt => padT + (1 - (volt - yMin) / (yMax - yMin)) * (H - padT - padB);
+
+  ctx.clearRect(0,0,W,H);
+
+  // Background.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0,0,W,H);
+
+  // Grid.
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  for(let d=0; d<=xMax; d+=90){
+    ctx.moveTo(X(d), padT);
+    ctx.lineTo(X(d), H-padB);
+  }
+
+  const gridStart = isTriac ? -Vm : 0;
+  const gridEnd = Vm;
+  const gridStep = Vm/5;
+
+  for(let v=gridStart; v<=gridEnd + 0.0001; v+=gridStep){
+    ctx.moveTo(padL, Y(v));
+    ctx.lineTo(W-padR, Y(v));
+  }
+
+  ctx.stroke();
+
+  // Axes.
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(padL, Y(0));
+  ctx.lineTo(W-padR, Y(0));
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, H-padB);
+  ctx.stroke();
+
+  // Labels.
+  ctx.fillStyle = "#374151";
+  ctx.font = "13px system-ui";
+
+  for(let d=0; d<=xMax; d+=180){
+    ctx.fillText(d + "°", X(d)-16, H-22);
+  }
+
+  const yLabels = isTriac ? [-Vm, -Vm/2, 0, Vm/2, Vm] : [0, Vm/4, Vm/2, 3*Vm/4, Vm];
+  yLabels.forEach(v => {
+    ctx.fillText(Math.round(v) + "V", 10, Y(v)+4);
+  });
+
+  ctx.fillStyle = "#111827";
+  ctx.font = "13px system-ui";
+  ctx.fillText("degrees", W - 82, H - 22);
+  ctx.fillText("voltage", 12, 22);
+
+  // Firing markers.
+  if(showMarkersBox.checked){
+    ctx.save();
+    ctx.strokeStyle = "#777";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6,6]);
+
+    for(let h=0; h<cycles*2; h++){
+      const fire = h*180 + alpha;
+      ctx.beginPath();
+      ctx.moveTo(X(fire), padT);
+      ctx.lineTo(X(fire), H-padB);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.fillStyle = "#111827";
+    ctx.font = "14px system-ui";
+    ctx.fillText("α = " + alpha + "°", X(alpha) + 8, padT + 20);
+  }
+
+  // Waveforms.
+  if(showSourceBox.checked){
+    plotSmooth(math.source, X, Y, xMax, "#2563eb", 2);
+  }
+
+  if(showDeviceBox.checked){
+    drawDeviceWithVerticals(math, state, X, Y);
+  }
+
+  if(showLoadBox.checked){
+    drawLoadWithVerticals(math, state, X, Y);
+  }
+
+  // Cursor.
+  if(showCursorBox.checked && hasCursor){
+    const x = clamp(cursorDeg, 0, xMax);
+    const vs = math.source(x);
+    const vl = math.load(x);
+    const vd = math.device(x);
+    const thetaHalf = math.halfAngle(x);
+    const conducting = math.isConducting(x) ? "ON" : "OFF";
+
+    ctx.save();
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5,5]);
+    ctx.beginPath();
+    ctx.moveTo(X(x), padT);
+    ctx.lineTo(X(x), H-padB);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // points
+    function point(v, color){
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(X(x), Y(v), 4.5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    if(showSourceBox.checked) point(vs, "#2563eb");
+    if(showLoadBox.checked) point(vl, "#dc2626");
+    if(showDeviceBox.checked) point(vd, "#7c3aed");
+
+    const boxX = X(x) < W*0.55 ? X(x) + 16 : X(x) - 222;
+    const boxY = padT + 48;
+    drawTextBox([
+      "x = " + x.toFixed(0) + "°",
+      "θhalf = " + thetaHalf.toFixed(0) + "°",
+      "state = " + conducting,
+      "Vs = " + vs.toFixed(2) + " V",
+      "Vload = " + vl.toFixed(2) + " V",
+      "Vdev = " + vd.toFixed(2) + " V"
+    ], boxX, boxY, 206, 18, "Cursor");
+    ctx.restore();
+  }
+
+  // Results box.
+  if(showResultBox.checked){
+    const boxW = 250;
+    const boxX = W - boxW - 36;
+    const boxY = 34;
+    const modeLabel = isTriac ? "TRIAC AC" : "SCR bridge";
+    const lines = [
+      "Mode: " + modeLabel,
+      "Vm = " + Vm.toFixed(2) + " V",
+      "α = " + alpha.toFixed(0) + "°",
+      "Conduction = " + math.conductionAngle.toFixed(0) + "° / half-cycle",
+      "Vdc = " + math.Vdc.toFixed(2) + " V",
+      "Vrms = " + math.Vrms.toFixed(2) + " V"
+    ];
+    drawTextBox(lines, boxX, boxY, boxW, 19, "Measurements");
+  }
+}
+
+function setCursorFromEvent(ev){
+  const rect = canvas.getBoundingClientRect();
+  const xCss = ev.clientX - rect.left;
+  const scaleX = canvas.width / rect.width;
+  const xCanvas = xCss * scaleX;
+
+  const state = getState();
+  const padL = 66;
+  const padR = 24;
+  const plotW = canvas.width - padL - padR;
+
+  cursorDeg = clamp(((xCanvas - padL) / plotW) * state.xMax, 0, state.xMax);
+  hasCursor = true;
+  draw();
+}
+
+canvas.addEventListener("pointerdown", ev => {
+  canvas.setPointerCapture(ev.pointerId);
+  setCursorFromEvent(ev);
+});
+
+canvas.addEventListener("pointermove", ev => {
+  if(ev.buttons === 1) setCursorFromEvent(ev);
+});
+
+[
+  modeSelect, loadType, alphaSlider, vmSlider, cyclesSlider,
+  showSourceBox, showLoadBox, showDeviceBox, showMarkersBox,
+  showResultBox, showCursorBox
+].forEach(input => {
+  input.addEventListener("input", draw);
+  input.addEventListener("change", draw);
+});
+
+draw();
+</script>
+</body>
+</html>
